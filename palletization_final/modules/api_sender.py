@@ -143,106 +143,88 @@ class APISender:
                  return [{"name": x, "id": x} for x in raw_list]
         return []
 
-    def send_batch(self, batch_id: str, qr_codes: list, payload: dict = None, **kwargs) -> bool:
+    def send_batch(self, batch_id: str, qr_codes: list, payload: dict = None, **kwargs):
         """
-        Send batch to cloud API
-        
-        Args:
-            batch_id: Unique batch/pallet identifier
-            qr_codes: List of decoded QR code strings
-            payload: Optional pre-constructed payload (extended)
-            **kwargs: Optional parameters
+        Send batch to cloud API.
+
+        Returns
+        -------
+        Tuple[bool, Optional[str]]
+            (success, pallet_id)
+            pallet_id is the value returned by the cloud (paletteId / palletId / id).
+            It is None on failure or when the cloud does not return one.
         """
         if not qr_codes:
             self.logger.warning(f"Batch {batch_id}: No QR codes to send")
-            return False
-        
+            return False, None
+
         self.logger.info(f"Sending batch {batch_id} with {len(qr_codes)} kegs")
-        
-        # Use provided payload (extended) or create default
+
+        # Use provided payload or build a minimal default
         if not payload:
             payload = {
-                "macId": CAMERA_MAC_ID,
-                "kegIds": qr_codes,
-                "kegCount": kwargs.get('keg_count', len(qr_codes)),
-                "batch": batch_id,
-                "beerType": kwargs.get('beer_type', 'Unknown'),
-                "timestamp": kwargs.get('timestamp', datetime.now().isoformat())
+                "macId":      CAMERA_MAC_ID,
+                "kegIds":     qr_codes,
+                "kegCount":   kwargs.get('keg_count', len(qr_codes)),
+                "batch":      batch_id,
+                "beerType":   kwargs.get('beer_type', 'Unknown'),
+                "timestamp":  kwargs.get('timestamp', datetime.now().isoformat()),
             }
 
-        # Store payload in database for retry capability
-        try:
-            with db_lock:
-                conn = sqlite3.connect(self.db_path, timeout=30)
-                cur = conn.cursor()
-                cur.execute('''
-                    UPDATE detection_sessions 
-                    SET api_payload = ?, batch_status = 'api_pending', last_api_attempt = ?
-                    WHERE session_id = ?
-                ''', (json.dumps(payload, default=str), datetime.now(), batch_id))
-                conn.commit()
-                conn.close()
-        except Exception as e:
-            self.logger.error(f"Failed to store payload: {e}")
-        
-        # Send with retry logic
-        success = self._send_with_retry(batch_id, payload)
-        
-        if not success:
-            # Add to retry queue
-            self._add_to_retry_queue(batch_id, payload, "Initial send failed")
-            # Mark for attention
-            self._mark_for_attention(batch_id, "API send failure")
-        
-        return success
+        # Send with retry logic — now returns (success, pallet_id)
+        success, pallet_id = self._send_with_retry(batch_id, payload)
 
-    def _send_with_retry(self, batch_id: str, payload: dict, start_attempt: int = 0) -> bool:
+        return success, pallet_id
+
+    def _send_with_retry(self, batch_id: str, payload: dict, start_attempt: int = 0):
         """
-        Send request with retry logic
+        Send request with retry logic.
+        Returns (success: bool, pallet_id: Optional[str]).
         """
         self._print_start_banner(batch_id, start_attempt)
-        
+
         last_error = None
-        
+
         self._add_payload_hash(payload, batch_id)
-        
+
         print("\nSTEP 3: Preparing HTTP headers...")
         headers = {'Content-Type': CONTENT_TYPE_JSON}
-        
+
         self._log_request_details(payload, headers)
-        
+
         for attempt in range(start_attempt + 1, start_attempt + self.max_retries + 1):
-            success, error_msg, should_break = self._process_single_attempt(batch_id, payload, headers, attempt, start_attempt)
-            
+            success, pallet_id, error_msg, should_break = self._process_single_attempt(
+                batch_id, payload, headers, attempt, start_attempt)
+
             if success:
-                return True
-            
+                return True, pallet_id
+
             if error_msg:
                 last_error = error_msg
-                
+
             if should_break:
                 break
-            
-            # Wait before retry (exponential backoff)
+
+            # Exponential backoff before next attempt
             if attempt < start_attempt + self.max_retries:
                 self._wait_before_retry(attempt, start_attempt)
-        
-        # Update error in database
+
         self._log_error_to_db(batch_id, last_error)
-        
         self._print_failure_banner()
-        return False
+        return False, None
 
     def _process_single_attempt(self, batch_id, payload, headers, attempt, start_attempt):
+        """
+        Returns (success, pallet_id, error_msg, should_break).
+        """
         self._print_attempt_banner(attempt, start_attempt)
-        
+
         try:
             self.logger.info(f"Sending {batch_id} to cloud (attempt {attempt})")
-            
+
             import time as _time
             start_time = _time.time()
-            
-            # Try the primary endpoint first
+
             response = self.session.post(
                 self.api_url,
                 json=payload,
@@ -250,49 +232,47 @@ class APISender:
                 timeout=self.timeout,
                 verify=False
             )
-            
+
             elapsed = _time.time() - start_time
-            
             self._print_response_details(response, elapsed)
-            
-            # Check response
+
             if response.status_code in [200, 201]:
-                return self._handle_success_response(response, batch_id), None, False
+                ok, pallet_id = self._handle_success_response(response, batch_id)
+                return ok, pallet_id, None, False
             else:
                 last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                 print(f"\nSTEP 8: FAILURE - Status {response.status_code}")
                 print(f"  Error: {last_error}")
                 self.logger.warning(f"Batch {batch_id}: {last_error} (attempt {attempt})")
-                return False, last_error, False
-                
+                return False, None, last_error, False
+
         except requests.exceptions.SSLError as e:
-            # SSL error handling
             if self._attempt_http_fallback(e, batch_id, payload, headers):
-                 return True, None, False
+                return True, None, None, False
             last_error = f"SSL verification failed: {str(e)}"
             self.logger.error(f"Batch {batch_id}: {last_error} (attempt {attempt})")
-            return False, last_error, False
-            
+            return False, None, last_error, False
+
         except requests.exceptions.Timeout:
             last_error = "Request timeout"
             print(f"\nSTEP 6: TIMEOUT ERROR")
             print(f"  Request timed out after {self.timeout} seconds")
             self.logger.warning(f"Batch {batch_id}: {last_error} (attempt {attempt})")
-            return False, last_error, False
-        
+            return False, None, last_error, False
+
         except requests.exceptions.RequestException as e:
             last_error = f"Network error: {str(e)}"
             print(f"\nSTEP 6: NETWORK ERROR")
             print(f"  Error: {e}")
             self.logger.warning(f"Batch {batch_id}: {last_error} (attempt {attempt})")
-            return False, last_error, False
-        
+            return False, None, last_error, False
+
         except Exception as e:
             last_error = f"Unexpected error: {str(e)}"
             print(f"\nSTEP 6: UNEXPECTED ERROR")
             print(f"  Error: {e}")
             self.logger.error(f"Batch {batch_id}: {last_error}")
-            return False, last_error, True  # Break on unexpected errors
+            return False, None, last_error, True   # Break on unexpected errors
 
     def _print_start_banner(self, batch_id, start_attempt):
         print("\n" + "="*60)
@@ -356,44 +336,29 @@ class APISender:
         print(json.dumps(payload, indent=4, default=str))
 
     def _handle_success_response(self, response, batch_id):
+        """
+        Parse the cloud response and extract pallet_id.
+        Returns (True, pallet_id).
+        DB is NOT written here — process_worker._write_completed_batch() does one write at the end.
+        """
+        pallet_id = None
         print(f"\nSTEP 8: SUCCESS - Status {response.status_code}")
         try:
             resp_data = response.json()
-            pallet_id = resp_data.get('paletteId') or resp_data.get('palletId') or resp_data.get('id') or "Unknown"
+            pallet_id = (resp_data.get('paletteId')
+                         or resp_data.get('palletId')
+                         or resp_data.get('id'))
             print(f"  Parsed JSON successfully")
             print(f"  Pallet ID: {pallet_id}")
             self.logger.info(f"Batch {batch_id} sent successfully. Pallet ID: {pallet_id}")
         except Exception as parse_err:
             print(f"  Could not parse JSON: {parse_err}")
             self.logger.info(f"Batch {batch_id} sent successfully (Status: {response.status_code})")
-        
-        self._update_db_success(response, batch_id)
-        
-        print("\n" + "="*60)
-        print("API SEND COMPLETED SUCCESSFULLY")
-        print("="*60 + "\n")
-        return True
 
-    def _update_db_success(self, response, batch_id):
-        # Update database status
-        print("\nSTEP 9: Updating database status...")
-        try:
-            with db_lock:
-                conn = sqlite3.connect(self.db_path, timeout=30)
-                cur = conn.cursor()
-                cur.execute('''
-                    UPDATE detection_sessions 
-                    SET batch_status = 'api_sent', 
-                        api_response = ?,
-                        last_api_attempt = ?
-                    WHERE session_id = ?
-                ''', (response.text, datetime.now(), batch_id))
-                conn.commit()
-                conn.close()
-            print("  Database updated successfully")
-        except Exception as e:
-            print(f"  ERROR updating database: {e}")
-            self.logger.error(f"Failed to update success status: {e}")
+        print("\n" + "=" * 60)
+        print("API SEND COMPLETED SUCCESSFULLY")
+        print("=" * 60 + "\n")
+        return True, pallet_id
 
     def _log_error_to_db(self, batch_id, last_error):
         print("\nSTEP FINAL: All retries exhausted, updating error in database...")

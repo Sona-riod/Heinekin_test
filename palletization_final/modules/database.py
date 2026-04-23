@@ -283,8 +283,8 @@ class DatabaseManager:
             conn.close()
             return 1 if mx is None else mx + 1
 
-    def start_session(self, source_image: str, target_keg_count: int = 6, 
-                     beer_type: str = "Lager", batch: str = None, 
+    def start_session(self, source_image: str, target_keg_count: int = 6,
+                     beer_type: str = "Lager", batch: str = None,
                      filling_date: str = None) -> Tuple[int, str]:
         batch_no = self._next_batch_number()
         session_id = f"BATCH_{batch_no:04d}"
@@ -292,25 +292,86 @@ class DatabaseManager:
             conn = sqlite3.connect(self.db_path, timeout=60)
             cur = conn.cursor()
             cur.execute('''
-                INSERT INTO detection_sessions 
-                (session_id, source_image, session_timestamp, detectionstart, 
-                 target_keg_count, beer_type, batch, filling_date, batch_status) 
+                INSERT INTO detection_sessions
+                (session_id, source_image, session_timestamp, detectionstart,
+                 target_keg_count, beer_type, batch, filling_date, batch_status)
                 VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'captured')
-            ''', (session_id, source_image, datetime.now(), target_keg_count, 
+            ''', (session_id, source_image, datetime.now(), target_keg_count,
                   beer_type, batch, filling_date))
-            
-            # Log system event
+
             cur.execute('''
                 INSERT INTO system_events (event_type, details)
                 VALUES (?, ?)
-            ''', ('session_started', 
+            ''', ('session_started',
                   f'{session_id} - Beer: {beer_type}, Target: {target_keg_count}, Batch: {batch}'))
-            
+
             conn.commit()
             conn.close()
-        
+
         print(f"[DB] STARTED {session_id} | Target: {target_keg_count} | Beer: {beer_type} | Batch: {batch} | Image: {source_image}")
         return batch_no, session_id
+
+    def start_session_complete(self, session_id: str, source_image: str,
+                               qr_list: List[str], beer_type: str, batch: str,
+                               filling_date: str, target_count: int,
+                               decoded_cnt: int, adv_used: int, adv_found: int,
+                               adimgp: int, elapsed: float, api_status: str,
+                               batch_status: str, pallet_id: Optional[str],
+                               error_msg: Optional[str], payload: Optional[dict]):
+        """
+        Single-shot DB write at the end of processing.
+        Replaces the 5-6 intermediate writes (update_batch_status, store_qr_codes,
+        mark_pallet_processed, store_api_payload, finish_session, api_sender DB write).
+        Uses INSERT OR REPLACE so a re-send on retry updates the existing row cleanly.
+        """
+        qr_json      = json.dumps(qr_list)
+        payload_json = json.dumps(payload, default=str) if payload else None
+
+        with db_lock:
+            conn = sqlite3.connect(self.db_path, timeout=60)
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT OR REPLACE INTO detection_sessions
+                    (session_id, source_image, session_timestamp, detectionstart,
+                     target_keg_count, beer_type, batch, filling_date,
+                     qr_list, decodedqrcodes, totaldetection,
+                     advanced_detection_used, advanced_qr_found, adimgp,
+                     processing_time, api_status, batch_status,
+                     pallet_id, last_error, api_payload,
+                     require_attention, attention_reason,
+                     last_api_attempt)
+                VALUES
+                    (?, ?, ?, 0,
+                     ?, ?, ?, ?,
+                     ?, ?, ?,
+                     ?, ?, ?,
+                     ?, ?, ?,
+                     ?, ?, ?,
+                     ?, ?,
+                     ?)
+            ''', (
+                session_id, source_image, datetime.now(), target_count,
+                beer_type, batch, filling_date,
+                qr_json, decoded_cnt, decoded_cnt,
+                adv_used, adv_found, adimgp,
+                elapsed, api_status, batch_status,
+                pallet_id, error_msg, payload_json,
+                1 if batch_status == 'api_failed' else 0,
+                error_msg if batch_status == 'api_failed' else None,
+                datetime.now(),
+            ))
+
+            # Log the completion event
+            cur.execute('''
+                INSERT INTO system_events (event_type, details)
+                VALUES (?, ?)
+            ''', ('batch_completed',
+                  f'{session_id} | {decoded_cnt}/{target_count} QRs | API:{api_status} | {elapsed:.2f}s'))
+
+            conn.commit()
+            conn.close()
+
+        print(f"[DB] WROTE {session_id} | {decoded_cnt} QRs | {batch_status} | {elapsed:.2f}s")
 
     def _insert_global_qr(self, qr: str, source_image: str, method: str, keg_type: str = 'Unknown') -> bool:
         with db_lock:
