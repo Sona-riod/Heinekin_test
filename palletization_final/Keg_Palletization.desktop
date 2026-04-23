@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Keg Palletization
+Comment=Start the QR Code Palletization System
+# Absolute path to the script you just created
+Exec=bash -c "sudo /home/icam-540/Desktop/video_vision/palletization_final/Start_palletization.sh; exec bash"
+# Directory where the app runs
+Path=/home/icam-540/Desktop/video_vision/palletization_final/
+# Icon can be generic or specific path
+Icon=utilities-terminal
+Terminal=true
+Categories=Utility;Application;

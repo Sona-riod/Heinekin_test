@@ -1,0 +1,26 @@
+# Image Processing & Computer Vision
+# For GPU acceleration, install opencv-python with CUDA support:
+# pip install opencv-contrib-python  (or build from source with CUDA)
+opencv-contrib-python
+numpy
+
+# GPU Acceleration (Optional - requires NVIDIA GPU + CUDA)
+# Install the correct cupy version for your CUDA version:
+# CUDA 11.x: pip install cupy-cuda11x
+# CUDA 12.x: pip install cupy-cuda12x
+# cupy-cuda12x
+
+# QR Code Detection
+pyzbar
+
+# Graphical User Interface (HMI)
+Kivy
+kivymd
+
+# Networking & API Communication
+requests
+python-socketio
+python-engineio
+
+# Security & Utilities
+cryptography

@@ -1,0 +1,10 @@
+ultralytics
+pyzbar
+qreader
+kivy
+kivymd
+requests
+Pillow
+urllib3
+pyusb
+libusb1

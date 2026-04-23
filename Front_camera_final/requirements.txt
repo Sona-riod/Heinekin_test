@@ -1,0 +1,7 @@
+pyzbar 
+kivy 
+kivymd 
+requests 
+python-socketio 
+python-engineio 
+cryptography

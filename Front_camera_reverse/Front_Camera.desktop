@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Front Camera
+Comment=Start the Front Camera Application
+Exec=/home/icam-540/Documents/Optimised_code_corrected/Front_camera_final/start_front.sh
+Icon=utilities-terminal
+Path=/home/icam-540/Documents/Optimised_code_corrected/Front_camera_final
+Terminal=true
+StartupNotify=true
+Categories=Application;

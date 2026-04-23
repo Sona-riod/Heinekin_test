@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Name=Top Camera System
+Comment=Launch Palletizer Application
+# Updated to point to start_app.sh with absolute path derived from logs
+Exec=bash -c "cd /home/icam-540/Desktop/video_vision/top_camera_final && ./start_app.sh"
+Path=/home/icam-540/Desktop/video_vision/top_camera_final/
+Icon=utilities-terminal
+Terminal=true
+Type=Application
+Categories=Utility;Application;

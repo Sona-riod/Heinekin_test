@@ -1,0 +1,8 @@
+ultralytics 
+pyzbar 
+qreader 
+kivy 
+kivymd 
+requests 
+python-socketio 
+websocket-client
