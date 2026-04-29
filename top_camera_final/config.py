@@ -210,26 +210,33 @@ UI_CONFIG = {
 # Kivy KivyMD theme
 THEME_CONFIG = {
     'theme_style':      'Dark',
-    'primary_palette':  'BlueGray',
+    'primary_palette':  'Cyan',
     'accent_palette':   'Amber',
 }
 
 # Color values in Kivy RGBA format  (0.0–1.0 per channel)
+# Deep-space industrial palette — matches enhanced hmi.py
 COLOR_SCHEME = {
-    'bg_darkest':     (0.07, 0.08, 0.10, 1),
-    'bg_dark':        (0.10, 0.11, 0.14, 1),
-    'bg_card':        (0.13, 0.14, 0.18, 1),
-    'primary':        (0.00, 0.49, 0.76, 1),   # #007DC2
-    'accent_amber':   (0.96, 0.65, 0.14, 1),   # #F5A623
-    'accent_teal':    (0.00, 0.79, 0.66, 1),   # #00C9A7
-    'danger':         (0.91, 0.30, 0.24, 1),   # #E84C3D
-    'success':        (0.15, 0.68, 0.38, 1),   # #27AE61
-    'warning':        (0.96, 0.65, 0.14, 1),   # #F5A623
-    'text_primary':   (0.94, 0.95, 0.97, 1),
-    'text_secondary': (0.60, 0.64, 0.71, 1),
-    'text_hint':      (0.35, 0.38, 0.45, 1),
-    'cola_color':     (0.96, 0.65, 0.14, 1),   # Amber – cola
-    'water_color':    (0.23, 0.55, 0.96, 1),   # Blue  – water
+    # Backgrounds
+    'bg_darkest':     (0.04, 0.05, 0.07, 1),   # #0A0D12 void black
+    'bg_dark':        (0.07, 0.09, 0.12, 1),   # #121720 deep panels
+    'bg_card':        (0.10, 0.13, 0.18, 1),   # #1A212E card surfaces
+    'bg_elevated':    (0.13, 0.17, 0.23, 1),   # #222B3B elevated elements
+    # Primary accent — electric cyan
+    'primary':        (0.00, 0.90, 1.00, 1),   # #00E5FF electric cyan
+    'accent_amber':   (1.00, 0.70, 0.00, 1),   # #FFB300 warm amber
+    'accent_teal':    (0.00, 0.90, 1.00, 1),   # alias for cyan
+    # Status
+    'danger':         (1.00, 0.27, 0.23, 1),   # #FF453A vivid red
+    'success':        (0.06, 0.85, 0.49, 1),   # #10D97D vivid green
+    'warning':        (1.00, 0.62, 0.04, 1),   # #FF9E0A orange-amber
+    # Text
+    'text_primary':   (0.82, 0.87, 0.95, 1),
+    'text_secondary': (0.52, 0.60, 0.72, 1),
+    'text_hint':      (0.32, 0.38, 0.48, 1),
+    # Product
+    'cola_color':     (1.00, 0.25, 0.10, 1),   # #FF4019 bold cola red
+    'water_color':    (0.20, 0.65, 1.00, 1),   # #33A6FF sky blue water
 }
 
 def setup_logging() -> logging.Logger:
